@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Price Tracker</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#1a1a1a}
+  h1{font-size:1.4rem} h2{font-size:1.1rem;margin-top:28px}
+  table{width:100%;border-collapse:collapse} th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}
+  form{display:flex;gap:8px;flex-wrap:wrap} input,select,button{padding:8px;font-size:1rem}
+  .ok{color:#0a7d33} .bad{color:#b3261e} small{color:#666}
+</style>
+</head>
+<body>
+<h1>Stock Price Tracker &amp; Alerts</h1>
+<small id="health">checking health…</small>
+
+<h2>Latest prices</h2>
+<table><thead><tr><th>Symbol</th><th>Price</th><th>Updated (UTC)</th></tr></thead><tbody id="prices"></tbody></table>
+
+<h2>Create alert</h2>
+<form id="f">
+  <input id="sym" placeholder="Symbol e.g. TCS.NS" required>
+  <select id="cond"><option>above</option><option>below</option></select>
+  <input id="thr" type="number" step="0.01" placeholder="Price" required>
+  <button>Add</button>
+</form>
+
+<h2>Alerts</h2>
+<table><thead><tr><th>#</th><th>Rule</th><th>Status</th></tr></thead><tbody id="alerts"></tbody></table>
+
+<script>
+async function j(u,o){const r=await fetch(u,o);return r.json()}
+async function load(){
+  try{
+    const h=await j('/health');
+    document.getElementById('health').innerHTML=
+      'API <span class="ok">ok</span> · worker <span class="'+(h.worker==='ok'?'ok':'bad')+'">'+h.worker+'</span> · data age '+h.data_age_seconds+'s';
+  }catch(e){document.getElementById('health').innerHTML='<span class="bad">API unreachable</span>'}
+  const p=await j('/prices');
+  document.getElementById('prices').innerHTML=p.map(x=>`<tr><td>${x.symbol}</td><td>${x.price.toFixed(2)}</td><td>${x.ts.replace('T',' ').slice(0,19)}</td></tr>`).join('');
+  const a=await j('/alerts');
+  document.getElementById('alerts').innerHTML=a.map(x=>`<tr><td>${x.id}</td><td>${x.symbol} ${x.condition} ${x.threshold}</td><td>${x.active?'watching':'triggered at '+x.triggered_price}</td></tr>`).join('');
+}
+document.getElementById('f').onsubmit=async e=>{
+  e.preventDefault();
+  await j('/alerts',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({symbol:sym.value,condition:cond.value,threshold:parseFloat(thr.value)})});
+  e.target.reset();load();
+};
+load();setInterval(load,10000);
+</script>
+</body>
+</html>

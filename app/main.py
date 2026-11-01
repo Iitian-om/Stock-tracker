@@ -9,9 +9,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from .db import Alert, Price, SessionLocal, init_db, utcnow
+from .db import Alert, Price, SessionLocal, TrackedEntity, init_db, utcnow
 
 INTERVAL = int(os.getenv("FETCH_INTERVAL", "60"))
+DEFAULT_SYMBOLS = [s.strip().upper() for s in os.getenv("SYMBOLS", "RELIANCE.NS,TCS.NS,INFY.NS,AAPL").split(",") if s.strip()]
 STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="Stock Price Tracker & Alert API", version="1.0")
@@ -36,8 +37,23 @@ class AlertIn(BaseModel):
     threshold: float = Field(gt=0)
 
 
+class EntityIn(BaseModel):
+    symbol: str = Field(min_length=1, max_length=20)
+    market: str = Field(min_length=1, max_length=40)
+    entity_type: Literal["stock", "etf", "crypto", "index", "forex", "commodity", "other"]
+
+
 def _price_dict(p: Price) -> dict:
-    return {"symbol": p.symbol, "price": p.price, "ts": p.ts.isoformat() + "Z"}
+    return {
+        "symbol": p.symbol, "price": p.price, "ts": p.ts.isoformat() + "Z",
+        "market": p.market or ("NSE India" if p.symbol.endswith(".NS") else "Unknown"),
+        "entity_type": p.entity_type or ("stock" if p.symbol.endswith(".NS") else "other"),
+    }
+
+
+def _entity_dict(entity: TrackedEntity) -> dict:
+    return {"id": entity.id, "symbol": entity.symbol, "market": entity.market,
+            "entity_type": entity.entity_type, "active": entity.active}
 
 
 def _alert_dict(a: Alert) -> dict:
@@ -75,6 +91,35 @@ def latest_prices(db: Session = Depends(get_db)):
         p = db.query(Price).filter(Price.symbol == s).order_by(Price.ts.desc()).first()
         out.append(_price_dict(p))
     return out
+
+
+@app.get("/entities")
+def list_entities(db: Session = Depends(get_db)):
+    """List configured entities, including default environment symbols."""
+    entities = {entity.symbol: entity for entity in db.query(TrackedEntity).filter(TrackedEntity.active.is_(True)).all()}
+    for symbol in DEFAULT_SYMBOLS:
+        if symbol not in entities:
+            entities[symbol] = TrackedEntity(symbol=symbol, market="NSE India" if symbol.endswith(".NS") else "US market",
+                                             entity_type="stock")
+    return [_entity_dict(entity) for entity in sorted(entities.values(), key=lambda item: item.symbol)]
+
+
+@app.post("/entities", status_code=201)
+def add_entity(body: EntityIn, db: Session = Depends(get_db)):
+    symbol = body.symbol.strip().upper()
+    existing = db.query(TrackedEntity).filter(TrackedEntity.symbol == symbol).first()
+    if existing:
+        existing.market = body.market.strip()
+        existing.entity_type = body.entity_type
+        existing.active = True
+        db.commit()
+        db.refresh(existing)
+        return _entity_dict(existing)
+    entity = TrackedEntity(symbol=symbol, market=body.market.strip(), entity_type=body.entity_type)
+    db.add(entity)
+    db.commit()
+    db.refresh(entity)
+    return _entity_dict(entity)
 
 
 @app.get("/price/{symbol}")

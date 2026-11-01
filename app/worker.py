@@ -2,7 +2,7 @@
 import os
 import time
 
-from .db import Alert, Price, SessionLocal, init_db, utcnow
+from .db import Alert, Price, SessionLocal, TrackedEntity, init_db, utcnow
 from .sources import fetch_price
 
 SYMBOLS = [s.strip().upper() for s in os.getenv("SYMBOLS", "RELIANCE.NS,TCS.NS,INFY.NS,AAPL").split(",") if s.strip()]
@@ -25,16 +25,19 @@ def check_alerts(db, symbol: str, price: float) -> None:
 def run_once() -> None:
     db = SessionLocal()
     try:
-        for symbol in SYMBOLS:
+        configured = {symbol: ("NSE India" if symbol.endswith(".NS") else "US market", "stock") for symbol in SYMBOLS}
+        for entity in db.query(TrackedEntity).filter(TrackedEntity.active.is_(True)).all():
+            configured[entity.symbol] = (entity.market, entity.entity_type)
+        for symbol, (market, entity_type) in configured.items():
             try:
                 price = fetch_price(symbol)
             except Exception as exc:  # noqa: BLE001
                 print(f"[worker] fetch failed for {symbol}: {exc}", flush=True)
                 continue
-            db.add(Price(symbol=symbol, price=price, ts=utcnow()))
+            db.add(Price(symbol=symbol, price=price, ts=utcnow(), market=market, entity_type=entity_type))
             check_alerts(db, symbol, price)
         db.commit()
-        print(f"[worker] stored prices for {len(SYMBOLS)} symbols", flush=True)
+        print(f"[worker] stored prices for {len(configured)} symbols", flush=True)
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"[worker] cycle failed: {exc}", flush=True)

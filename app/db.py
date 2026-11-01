@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timezone
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, Index, Integer,
-                        String, create_engine)
+                        String, create_engine, inspect, text)
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/stocks.db")
@@ -32,7 +32,19 @@ class Price(Base):
     symbol = Column(String(20), nullable=False)
     price = Column(Float, nullable=False)
     ts = Column(DateTime, nullable=False, default=utcnow)
+    market = Column(String(40), nullable=True)
+    entity_type = Column(String(20), nullable=True)
     __table_args__ = (Index("ix_prices_symbol_ts", "symbol", "ts"),)
+
+
+class TrackedEntity(Base):
+    __tablename__ = "tracked_entities"
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(20), nullable=False, unique=True, index=True)
+    market = Column(String(40), nullable=False)
+    entity_type = Column(String(20), nullable=False)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=utcnow)
 
 
 class Alert(Base):
@@ -52,6 +64,13 @@ def init_db(retries: int = 10, delay: float = 3.0) -> None:
     for attempt in range(1, retries + 1):
         try:
             Base.metadata.create_all(engine)
+            inspector = inspect(engine)
+            price_columns = {column["name"] for column in inspector.get_columns("prices")}
+            with engine.begin() as connection:
+                if "market" not in price_columns:
+                    connection.execute(text("ALTER TABLE prices ADD COLUMN market VARCHAR(40)"))
+                if "entity_type" not in price_columns:
+                    connection.execute(text("ALTER TABLE prices ADD COLUMN entity_type VARCHAR(20)"))
             return
         except Exception as exc:  # noqa: BLE001
             print(f"[db] init attempt {attempt}/{retries} failed: {exc}", flush=True)

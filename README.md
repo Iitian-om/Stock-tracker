@@ -16,12 +16,32 @@ python -m app.worker                 # terminal 2 -> fetches prices every FETCH_
 ```
 Tip: set `FETCH_INTERVAL=10` in `.env` while testing.
 
+## Current tracked entities and live data
+
+The default tracked entities are `RELIANCE.NS`, `TCS.NS`, and `INFY.NS` from NSE India, plus `AAPL` from the US market. They are classified as stocks. The default `.env.example` uses `PRICE_SOURCE=mock`, so displayed prices are generated demo values, not live market prices.
+
+For provider-backed quotes, set `PRICE_SOURCE=yahoo`. The source uses Yahoo Finance's chart endpoint through the `requests` library. Examples include `RELIANCE.NS` (NSE), `RELIANCE.BO` (BSE), `AAPL` (US stock), `BTC-USD` (crypto), and `EURINR=X` (forex).
+
+## Add a custom tracked entity
+
+Use the dashboard's **Track a custom entity** form, or call the API directly:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/entities -Method Post `
+	-ContentType "application/json" `
+	-Body '{"symbol":"BTC-USD","market":"Crypto market","entity_type":"crypto"}'
+```
+
+Supported types are `stock`, `etf`, `crypto`, `index`, `forex`, `commodity`, and `other`. View the configured list with `GET /entities`. The worker includes custom entities on its next fetch cycle.
+
 ## Endpoints
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/` | Dashboard |
 | GET | `/health` | DB status + worker freshness (used for SLA monitoring) |
 | GET | `/prices` | Latest price of every symbol |
+| GET | `/entities` | Tracked symbols with market and entity type |
+| POST | `/entities` | Add or update a tracked symbol, market, and type |
 | GET | `/price/{symbol}` | Latest price of one symbol |
 | GET | `/history/{symbol}?limit=100` | Price history |
 | POST | `/alerts` | `{"symbol":"TCS.NS","condition":"above","threshold":4000}` |

@@ -24,7 +24,7 @@
   .symbol{font-weight:bold;color:var(--teal);font-family:Georgia,serif}.price{font-weight:bold;text-align:right}.updated{white-space:nowrap;color:#686b5e;font-size:12px}.quote{font-size:12px;color:#596052;font-weight:bold}.ist{white-space:nowrap;color:#686b5e;font-size:12px}
   .empty{color:#777;text-align:center;padding:22px 8px;font-style:italic}
   form{display:grid;grid-template-columns:1.2fr .8fr 1fr auto;gap:7px;align-items:end}label{display:block;color:#596052;font-size:11px;font-weight:bold;margin:0 0 3px}input,select,button{width:100%;padding:8px 7px;border:1px solid #8e876f;border-radius:0;background:#fff;color:var(--ink);font:13px Tahoma,Verdana,sans-serif}input:focus,select:focus{outline:2px solid #94c8c0}button{background:var(--teal);border-color:#00545a;color:#fff;font-weight:bold;cursor:pointer;box-shadow:2px 2px 0 #8e876f}button:hover{background:#005e65}button:active{box-shadow:none;transform:translate(1px,1px)}.delete{width:auto;padding:3px 7px;background:#f7eee2;color:var(--red);border:1px solid #bd907d;box-shadow:none;font-size:11px}
-  .rule{font-family:Georgia,serif}.watching{color:var(--green);font-weight:bold}.triggered{color:var(--red);font-weight:bold}.footer{padding:10px 24px;background:#dfe4d5;border-top:1px solid var(--line);color:#596052;font-size:11px}.nowrap{white-space:nowrap}
+  .rule{font-family:Georgia,serif}.watching{color:var(--green);font-weight:bold}.triggered{color:var(--red);font-weight:bold}.footer{padding:10px 24px;background:#dfe4d5;border-top:1px solid var(--line);color:#596052;font-size:11px}.nowrap{white-space:nowrap}.entity-table td{padding:7px 8px}.entity-type{color:#596052;font-size:12px;text-transform:capitalize}
   @media(max-width:700px){.page{margin:0;border-left:0;border-right:0;box-shadow:none}.columns{display:block}header,nav,main,.footer{padding-left:14px;padding-right:14px}.statusbar{align-items:flex-start;flex-direction:column}form{grid-template-columns:1fr 1fr}.form-action{grid-column:span 2}table{font-size:12px}.updated{white-space:normal}}
 </style>
 </head>
@@ -41,6 +41,8 @@
       </div>
       <div>
         <section id="new-alert"><h2 class="section-title">Create an alert</h2><div class="section-body"><p class="note">Watch a symbol and get a record when it crosses your price.</p><form id="alert-form"><div><label for="sym">SYMBOL</label><input id="sym" placeholder="TCS.NS" required maxlength="20"></div><div><label for="cond">WHEN PRICE IS</label><select id="cond"><option value="above">above</option><option value="below">below</option></select></div><div><label for="thr">TARGET PRICE</label><input id="thr" type="number" step="0.01" min="0.01" placeholder="4000.00" required></div><div class="form-action"><button type="submit">Add alert</button></div></form><p id="form-message" class="note" aria-live="polite"></p></div></section>
+        <section id="add-entity"><h2 class="section-title">Track a custom entity</h2><div class="section-body"><p class="note">Enter a provider ticker. The worker will include it on its next cycle.</p><form id="entity-form"><div><label for="entity-symbol">SYMBOL / TICKER</label><input id="entity-symbol" placeholder="BTC-USD" required maxlength="20"></div><div><label for="market">MARKET</label><input id="market" placeholder="Crypto market" required maxlength="40"></div><div><label for="entity-type">ENTITY TYPE</label><select id="entity-type"><option value="stock">stock</option><option value="etf">ETF</option><option value="crypto">crypto</option><option value="index">index</option><option value="forex">forex</option><option value="commodity">commodity</option><option value="other">other</option></select></div><div class="form-action"><button type="submit">Track entity</button></div></form><p id="entity-message" class="note" aria-live="polite"></p></div></section>
+        <section id="tracked"><h2 class="section-title">Tracked entities</h2><div class="section-body"><p class="note">The current symbols, market, and entity type used by the worker.</p><table class="entity-table"><thead><tr><th>Symbol</th><th>Market</th><th>Type</th></tr></thead><tbody id="entities-body"><tr><td class="empty" colspan="3">Loading tracked entities...</td></tr></tbody></table></div></section>
         <section><h2 class="section-title">About this board</h2><div class="section-body"><p class="note">StockDesk checks the local price worker and displays its latest saved readings. Data refreshes every 10 seconds.</p><p class="note"><strong>Quote units:</strong> symbols ending in <strong>.NS</strong> are INR (Indian rupees); common US tickers such as AAPL are USD (US dollars); crypto pairs such as BTC-USD are USD. Other symbols are marked as source units.</p><p class="note"><strong>Data mode:</strong> the default <strong>mock</strong> source makes demo prices. Set <strong>PRICE_SOURCE=yahoo</strong> for Yahoo Finance quotes.</p><p class="note">For API details, visit <a href="/docs">the service docs</a>.</p></div></section>
       </div>
     </div>
@@ -70,17 +72,25 @@
   function showAlerts(alerts) {
     $('alerts-body').innerHTML = alerts.length ? alerts.map(item => `<tr><td>${item.id}</td><td class="rule">${item.symbol} ${item.condition} ${Number(item.threshold).toFixed(2)}</td><td class="${item.active ? 'watching' : 'triggered'}">${item.active ? 'watching' : 'triggered at ' + Number(item.triggered_price).toFixed(2)}</td><td><button class="delete" data-id="${item.id}" type="button">remove</button></td></tr>`).join('') : '<tr><td class="empty" colspan="4">No alerts yet. Add one from the panel.</td></tr>';
   }
+  function showEntities(entities) {
+    $('entities-body').innerHTML = entities.length ? entities.map(item => `<tr><td class="symbol">${item.symbol}</td><td>${item.market}</td><td class="entity-type">${item.entity_type}</td></tr>`).join('') : '<tr><td class="empty" colspan="3">No tracked entities configured.</td></tr>';
+  }
   async function load() {
     try {
       const health = await request('/health');
       $('health').innerHTML = `API <span class="ok">online</span> &middot; worker <span class="${health.worker === 'ok' ? 'ok' : 'bad'}">${health.worker}</span> &middot; data age ${health.data_age_seconds ?? 'unknown'}s`;
-      showPrices(await request('/prices')); showAlerts(await request('/alerts'));
+      showPrices(await request('/prices')); showAlerts(await request('/alerts')); showEntities(await request('/entities'));
     } catch (error) { $('health').innerHTML = '<span class="bad">Service unavailable. Check the API and worker.</span>'; }
   }
   $('alert-form').addEventListener('submit', async event => {
     event.preventDefault(); $('form-message').textContent = 'Saving alert...';
     try { await request('/alerts', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({symbol:$('sym').value.trim(), condition:$('cond').value, threshold:parseFloat($('thr').value)})}); event.target.reset(); $('form-message').innerHTML = '<span class="ok">Alert added to the register.</span>'; await load(); }
     catch (error) { $('form-message').innerHTML = '<span class="bad">Could not save this alert.</span>'; }
+  });
+  $('entity-form').addEventListener('submit', async event => {
+    event.preventDefault(); $('entity-message').textContent = 'Saving tracked entity...';
+    try { await request('/entities', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({symbol:$('entity-symbol').value.trim(), market:$('market').value.trim(), entity_type:$('entity-type').value})}); event.target.reset(); $('entity-message').innerHTML = '<span class="ok">Entity saved. It will be fetched on the next worker cycle.</span>'; await load(); }
+    catch (error) { $('entity-message').innerHTML = '<span class="bad">Could not save this entity. Check the ticker format.</span>'; }
   });
   $('alerts-body').addEventListener('click', async event => { if (!event.target.matches('.delete')) return; try { await request('/alerts/' + event.target.dataset.id, {method:'DELETE'}); await load(); } catch (error) { $('form-message').innerHTML = '<span class="bad">Could not remove this alert.</span>'; } });
   load(); setInterval(load, 10000);
